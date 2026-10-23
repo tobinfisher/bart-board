@@ -27,7 +27,7 @@
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font:16px/1.3 var(--display);
-  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-top:calc(env(safe-area-inset-top,0px) + 16px);padding-bottom:env(safe-area-inset-bottom,0px);
   padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
 /* Sized to fit one iPhone screen: at most 4 trains per board, compact rows */
 main{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:10px;padding-block:10px}
@@ -43,7 +43,7 @@ li:first-child{border-top:0}
 .dest b{display:block;font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dest span{font-size:.75rem;color:var(--muted)}
 .dest .late{color:var(--late)}
-.min{font:600 1.45rem var(--mono);font-variant-numeric:tabular-nums;text-align:right;line-height:1;display:flex;align-items:baseline;gap:3px}
+.min{font:600 1.74rem var(--mono);font-variant-numeric:tabular-nums;text-align:right;line-height:1;display:flex;align-items:baseline;gap:3px}
 .min small{font:600 .65rem var(--display);color:var(--muted);letter-spacing:.06em}
 .empty{padding:12px 14px;color:var(--muted);font-size:.9rem}
 .err{color:var(--late)}
