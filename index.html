@@ -17,14 +17,15 @@
 /* Layout: two stacked departure boards, one per direction, read like platform signage */
 :root{
   --bg:#eef2f4; --panel:#ffffff; --fg:#0d1a24; --muted:#5c6b76; --rule:#d5dde2;
-  --accent:#0099d8; --late:#c2410c;
+  --accent:#0099d8; --late:#c2410c; --sel:#ddf0fa; --onaccent:#ffffff; --ring:#0b6fa0;
   --display:"Overpass",system-ui,sans-serif;
   --mono:"Overpass Mono",ui-monospace,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#0b141b; --panel:#13212c; --fg:#e8eef2; --muted:#8a9aa6; --rule:#22323e;
-  --accent:#3bb4ea; --late:#fb923c; color-scheme:dark}}
+  --accent:#3bb4ea; --late:#fb923c; --sel:#173a4f; --onaccent:#06131b; --ring:#3bb4ea; color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font:16px/1.3 var(--display);
   padding-top:calc(env(safe-area-inset-top,0px) + 16px);padding-bottom:env(safe-area-inset-bottom,0px);
@@ -38,6 +39,9 @@ h2 span{font-size:.7rem;font-weight:600;color:var(--muted);letter-spacing:.06em;
 ol{list-style:none;margin:0;padding:0}
 li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 14px;border-top:1px solid var(--rule)}
 li:first-child{border-top:0}
+li.train{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .15s}
+li.train:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+li.sel{background:var(--sel)}
 .chip{width:8px;height:30px;border-radius:3px}
 .dest{min-width:0}
 .dest b{display:block;font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -45,13 +49,31 @@ li:first-child{border-top:0}
 .dest .late{color:var(--late)}
 .min{font:600 1.74rem var(--mono);font-variant-numeric:tabular-nums;text-align:right;line-height:1;display:flex;align-items:baseline;gap:3px}
 .min small{font:600 .65rem var(--display);color:var(--muted);letter-spacing:.06em}
+.min svg{width:16px;height:16px;fill:var(--accent);align-self:center;margin-right:4px}
 .empty{padding:12px 14px;color:var(--muted);font-size:.9rem}
 .err{color:var(--late)}
 .note{padding:6px 14px;font-size:.75rem;letter-spacing:.02em}
-.status{font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums;display:flex;justify-content:center;gap:10px;align-items:center}
-button{font:600 .75rem var(--display);color:var(--accent);background:none;border:1px solid var(--rule);
-  border-radius:999px;padding:3px 12px;cursor:pointer}
-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{font-size:.75rem;color:var(--muted);font-variant-numeric:tabular-nums;display:flex;justify-content:center;gap:10px;align-items:center;flex-wrap:wrap}
+button,.pill{font:600 .75rem var(--display);color:var(--accent);background:none;border:1px solid var(--rule);
+  border-radius:999px;padding:3px 12px;cursor:pointer;text-decoration:none;white-space:nowrap}
+button:focus-visible,.pill:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Armed alarm bar */
+.armed{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--accent);
+  border-radius:10px;padding:8px 12px;font-size:.85rem}
+.armed svg{width:18px;height:18px;fill:var(--accent);flex:none}
+.armed .txt{flex:1 1 0;min-width:0}
+.armed .pill,.armed button{flex:none;padding:5px 10px}
+.armed .txt b{font-variant-numeric:tabular-nums}
+.armed .txt span{display:block;font-size:.72rem;color:var(--muted)}
+/* Ringing overlay */
+.ring{position:fixed;inset:0;z-index:20;background:var(--ring);color:var(--onaccent);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;text-align:center;
+  padding:calc(env(safe-area-inset-top,0px) + 24px) max(24px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 24px) max(24px,env(safe-area-inset-left,0px))}
+.ring .go{font-size:2.6rem;font-weight:800;margin:0;letter-spacing:-.01em}
+.ring p{margin:0;font-size:1.15rem;max-width:22em;text-wrap:balance}
+.ring button{font-size:1.1rem;padding:14px 48px;color:var(--ring);background:var(--onaccent);border:0}
+@media (prefers-reduced-motion:no-preference){.ring .go{animation:pulse 1s ease-in-out infinite}}
+@keyframes pulse{50%{opacity:.55}}
 </style>
 </head>
 <body>
@@ -66,14 +88,37 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
     <ol id="bayf"><li class="empty">Loading departures…</li></ol>
   </section>
 
-  <div class="status"><span id="updated">Loading…</span><button id="refresh" type="button">Refresh</button></div>
+  <div id="armed" class="armed" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>
+    <div class="txt"><b id="armedCount">Alarm</b><span id="armedTrain"></span></div>
+    <a id="timerLink" class="pill" href="#">Timer</a>
+    <button id="cancel" type="button">Cancel</button>
+  </div>
+
+  <div class="status"><span id="updated">Loading…</span><span id="hint">Tap a train to set an alarm</span><button id="refresh" type="button">Refresh</button></div>
 </main>
+
+<div id="ring" class="ring" role="alertdialog" aria-labelledby="ringGo" aria-describedby="ringText" hidden>
+  <div id="ringGo" class="go">Time to go</div>
+  <p id="ringText"></p>
+  <button id="dismiss" type="button">Dismiss</button>
+</div>
 
 <script>
 const KEY = "MW9S-E7SL-26DU-VV8V"; // BART's public API key
 // Destinations whose trains pass Embarcadero (from Bay Fair) or Bay Fair (from Embarcadero)
-const TO_SF = new Set(["EMBR","MONT","POWL","CIVC","16TH","24TH","GLEN","BALB","DALY","COLM","SSAN","SBRN","SFIA","MLBR"]);
-const TO_BAYF = new Set(["BAYF","SHAY","UCTY","FRMT","WARM","MLPT","BERY","CAST","WDUB","DUBL"]);
+const ALLOWED = {
+  BAYF: new Set(["EMBR","MONT","POWL","CIVC","16TH","24TH","GLEN","BALB","DALY","COLM","SSAN","SBRN","SFIA","MLBR"]),
+  EMBR: new Set(["BAYF","SHAY","UCTY","FRMT","WARM","MLPT","BERY","CAST","WDUB","DUBL"]),
+};
+const NAME = { BAYF:"Bay Fair", EMBR:"Embarcadero" };
+// Only trains you can actually catch: [min, max] minutes away
+const WINDOW = { BAYF:[4,30], EMBR:[15,40] };
+// Alarm goes off when the selected train is this many minutes away
+const LEAD = { EMBR:20, BAYF:6 };
+const MAX_ROWS = 4;
+// Name of the optional iOS Shortcut that starts a Clock timer
+const SHORTCUT = "BART Timer";
 
 // BART moved its legacy API to api2.bart.gov; keep the old host as a fallback
 const HOSTS = ["https://api2.bart.gov", "https://api.bart.gov"];
@@ -90,28 +135,52 @@ async function etd(orig){
   throw last;
 }
 
-// Only trains you can actually catch: [min, max] minutes away
-const WINDOW = { BAYF:[4,30], EMBR:[15,40] };
-const MAX_ROWS = 4;
+// ---------- alarm state (kept on this phone so reopening the app keeps it) ----------
+let alarm = null; // {station, abbr, dest, departAt, lead, fired}
+try{ alarm = JSON.parse(localStorage.getItem("bartAlarm")) || null; }catch(e){}
+if(alarm && alarm.departAt < Date.now()) alarm = null;
+function saveAlarm(){ try{ alarm ? localStorage.setItem("bartAlarm", JSON.stringify(alarm)) : localStorage.removeItem("bartAlarm"); }catch(e){} }
 
-function trains(list, allowed, [lo, hi]){
+// Every train heading the right way, with its predicted departure time
+function parse(list, station, fetchedAt){
   const out = [];
   for(const d of list){
-    if(!allowed.has(d.abbreviation)) continue;
+    if(!ALLOWED[station].has(d.abbreviation)) continue;
     for(const e of d.estimate){
       const m = e.minutes === "Leaving" ? 0 : parseInt(e.minutes,10);
-      if(Number.isNaN(m) || m < lo) continue; // too soon to catch
-      out.push({dest:d.destination, min:m, cars:e.length, color:e.hexcolor, platform:e.platform, delay:+e.delay||0});
+      if(Number.isNaN(m)) continue;
+      out.push({abbr:d.abbreviation, dest:d.destination, min:m, departAt:fetchedAt+m*60000,
+        cars:e.length, color:e.hexcolor, platform:e.platform, delay:+e.delay||0});
     }
   }
-  out.sort((a,b)=>a.min-b.min);
-  const inWindow = out.filter(t=>t.min<=hi);
-  // Nothing in the window: fall back to the next two catchable trains after it
-  return inWindow.length ? {rows:inWindow.slice(0, MAX_ROWS), fallback:false}
-                         : {rows:out.slice(0, 2), fallback:true};
+  return out.sort((a,b)=>a.min-b.min);
 }
 
-function render(el, {rows, fallback}, [lo, hi]){
+// BART gives no train IDs, so follow the selected train by destination + closest departure time
+function matchAlarm(station, all){
+  if(!alarm || alarm.station!==station) return null;
+  let best=null, diff=Infinity;
+  for(const t of all){
+    if(t.abbr!==alarm.abbr) continue;
+    const d=Math.abs(t.departAt-alarm.departAt);
+    if(d<diff){ diff=d; best=t; }
+  }
+  if(best && diff<=4*60000){ alarm.departAt=best.departAt; saveAlarm(); return best; }
+  return null;
+}
+
+function view(all, [lo, hi], selected){
+  const catchable = all.filter(t=>t.min>=lo || t===selected);
+  const inWindow = catchable.filter(t=>t.min<=hi);
+  if(inWindow.length) return {rows:inWindow.slice(0, MAX_ROWS), fallback:false};
+  // Nothing in the window: fall back to the next two catchable trains after it
+  return {rows:catchable.slice(0, 2), fallback:true};
+}
+
+const BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>';
+const fmtTime = ms => new Date(ms).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+
+function render(station, el, {rows, fallback}, [lo, hi], selected){
   el.replaceChildren();
   if(!rows.length){
     const li=document.createElement("li"); li.className="empty";
@@ -121,41 +190,153 @@ function render(el, {rows, fallback}, [lo, hi]){
     const li=document.createElement("li"); li.className="empty note";
     li.textContent=`Nothing ${lo}–${hi} min out. Next trains:`; el.append(li);
   }
-  const now = new Date();
   for(const t of rows){
     const li=document.createElement("li");
+    const isSel = t===selected;
+    li.className="train"+(isSel?" sel":"");
+    li.tabIndex=0; li.setAttribute("role","button");
+    li.setAttribute("aria-pressed", isSel ? "true" : "false");
+    li.setAttribute("aria-label", `${t.dest}, ${t.min} minutes. ${isSel?"Alarm set. Tap to cancel.":`Set alarm for ${LEAD[station]} minutes before.`}`);
     const chip=document.createElement("div"); chip.className="chip"; chip.style.background=t.color||"var(--muted)";
     const dest=document.createElement("div"); dest.className="dest";
     const b=document.createElement("b"); b.textContent=t.dest;
     const s=document.createElement("span");
-    const at=new Date(now.getTime()+t.min*60000).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
-    s.textContent=`${t.cars}-car · Platform ${t.platform} · ${at}`;
+    s.textContent=`${t.cars}-car · Platform ${t.platform} · ${fmtTime(t.departAt)}`;
     dest.append(b,s);
     if(t.delay>=60){const d=document.createElement("span"); d.className="late"; d.textContent=` · ${Math.round(t.delay/60)} min late`; s.append(d);}
-    const m=document.createElement("div"); m.className="min"+(t.min===0?" now":"");
-    if(t.min===0){m.textContent="Now";}
-    else{m.textContent=t.min; const sm=document.createElement("small"); sm.textContent="MIN"; m.append(sm);}
-    li.append(chip,dest,m); el.append(li);
+    const m=document.createElement("div"); m.className="min";
+    if(isSel) m.insertAdjacentHTML("beforeend", BELL);
+    if(t.min===0){ m.append("Now"); }
+    else{ m.append(String(t.min)); const sm=document.createElement("small"); sm.textContent="MIN"; m.append(sm); }
+    li.append(chip,dest,m);
+    const pick=()=>toggleAlarm(station, t);
+    li.addEventListener("click", pick);
+    li.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); pick(); } });
+    el.append(li);
   }
 }
 
 function fail(el, err){
-  el.innerHTML=""; const li=document.createElement("li"); li.className="empty err";
+  el.replaceChildren(); const li=document.createElement("li"); li.className="empty err";
   li.textContent=`Couldn't load arrivals (${err.message}). Check your connection and tap Refresh.`; el.append(li);
 }
 
-const upd=document.getElementById("updated");
-async function load(){
-  upd.textContent="Updating…";
-  const [a,b] = await Promise.allSettled([etd("BAYF"), etd("EMBR")]);
-  a.status==="fulfilled" ? render(document.getElementById("bayf"), trains(a.value, TO_SF, WINDOW.BAYF), WINDOW.BAYF) : fail(document.getElementById("bayf"), a.reason);
-  b.status==="fulfilled" ? render(document.getElementById("embr"), trains(b.value, TO_BAYF, WINDOW.EMBR), WINDOW.EMBR) : fail(document.getElementById("embr"), b.reason);
-  upd.textContent="Updated "+new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"});
+// ---------- data loading ----------
+const data = {}; // station -> parsed trains from the last successful fetch
+const LIST = { BAYF:document.getElementById("bayf"), EMBR:document.getElementById("embr") };
+
+function drawStation(station){
+  if(!data[station]) return;
+  const sel = matchAlarm(station, data[station]);
+  if(alarm && alarm.station===station && !sel && alarm.departAt < Date.now()-60000){ clearAlarm(); }
+  render(station, LIST[station], view(data[station], WINDOW[station], sel), WINDOW[station], sel);
 }
+
+const upd=document.getElementById("updated");
+let loading=false;
+async function load(){
+  if(loading) return; loading=true;
+  upd.textContent="Updating…";
+  const stations=["EMBR","BAYF"];
+  const res = await Promise.allSettled(stations.map(etd));
+  const now=Date.now();
+  res.forEach((r,i)=>{
+    const st=stations[i];
+    if(r.status==="fulfilled"){ data[st]=parse(r.value, st, now); drawStation(st); }
+    else fail(LIST[st], r.reason);
+  });
+  upd.textContent="Updated "+new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit",second:"2-digit"});
+  loading=false;
+  tick();
+}
+
+// ---------- alarm ----------
+const armedEl=document.getElementById("armed"), hintEl=document.getElementById("hint");
+const ringEl=document.getElementById("ring");
+let audio=null, beepTimer=null, wakeLock=null;
+
+function unlockAudio(){
+  // iOS only plays sound that was started from a tap, so prime it here.
+  try{ if(navigator.audioSession) navigator.audioSession.type="playback"; }catch(e){}
+  try{
+    audio = audio || new (window.AudioContext||window.webkitAudioContext)();
+    audio.resume();
+    const b=audio.createBuffer(1,1,22050), s=audio.createBufferSource(); s.buffer=b; s.connect(audio.destination); s.start(0);
+  }catch(e){}
+}
+function tone(freq, start, dur){
+  const o=audio.createOscillator(), g=audio.createGain();
+  o.type="square"; o.frequency.value=freq;
+  g.gain.setValueAtTime(0.0001,start); g.gain.exponentialRampToValueAtTime(0.35,start+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+  o.connect(g).connect(audio.destination); o.start(start); o.stop(start+dur+0.02);
+}
+function beep(){
+  if(!audio) return;
+  audio.resume();
+  const t=audio.currentTime;
+  [0,0.18,0.36].forEach((d,i)=>tone(i===2?1320:988, t+d, 0.14));
+}
+async function keepAwake(on){
+  try{
+    if(on && !wakeLock && "wakeLock" in navigator && !document.hidden){
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", ()=>{ wakeLock=null; });
+    }else if(!on && wakeLock){ await wakeLock.release(); wakeLock=null; }
+  }catch(e){ wakeLock=null; }
+}
+
+function toggleAlarm(station, t){
+  unlockAudio();
+  if(alarm && alarm.station===station && alarm.abbr===t.abbr && Math.abs(alarm.departAt-t.departAt)<60000){ clearAlarm(); return; }
+  alarm = {station, abbr:t.abbr, dest:t.dest, departAt:t.departAt, lead:LEAD[station], fired:false};
+  saveAlarm(); keepAwake(true);
+  drawStation("EMBR"); drawStation("BAYF");
+  tick(); schedule();
+}
+function clearAlarm(){
+  alarm=null; saveAlarm(); stopRinging(); keepAwake(false);
+  armedEl.hidden=true; hintEl.hidden=false;
+  drawStation("EMBR"); drawStation("BAYF"); schedule();
+}
+function startRinging(){
+  ringEl.hidden=false;
+  document.getElementById("ringText").textContent =
+    `${alarm.dest} train leaves ${NAME[alarm.station]} in about ${Math.max(0,Math.round((alarm.departAt-Date.now())/60000))} min (${fmtTime(alarm.departAt)}).`;
+  beep(); clearInterval(beepTimer);
+  let n=0; beepTimer=setInterval(()=>{ beep(); if(navigator.vibrate) navigator.vibrate(300); if(++n>90) stopRinging(); }, 1000);
+  document.getElementById("dismiss").focus();
+}
+function stopRinging(){ clearInterval(beepTimer); beepTimer=null; ringEl.hidden=true; }
+document.getElementById("dismiss").addEventListener("click", clearAlarm);
+document.getElementById("cancel").addEventListener("click", clearAlarm);
+
+function tick(){
+  if(!alarm){ armedEl.hidden=true; hintEl.hidden=false; return; }
+  armedEl.hidden=false; hintEl.hidden=true;
+  const msToAlarm = alarm.departAt - alarm.lead*60000 - Date.now();
+  const count=document.getElementById("armedCount"), info=document.getElementById("armedTrain"), link=document.getElementById("timerLink");
+  info.textContent=`${alarm.dest} · ${fmtTime(alarm.departAt)} · at ${alarm.lead} min`;
+  if(msToAlarm>0){
+    const s=Math.ceil(msToAlarm/1000);
+    count.textContent=`Alarm in ${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+    const mins=Math.floor(msToAlarm/60000);
+    link.hidden = mins<1;
+    link.href=`shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT)}&input=text&text=${mins}`;
+  }else{
+    count.textContent="Time to go"; link.hidden=true;
+    if(!alarm.fired){ alarm.fired=true; saveAlarm(); startRinging(); }
+  }
+}
+
+// Refresh every 30 s, or every 15 s while an alarm is set
+let poll=null;
+function schedule(){ clearInterval(poll); poll=setInterval(()=>{ if(!document.hidden) load(); }, alarm?15000:30000); }
 document.getElementById("refresh").addEventListener("click", load);
-document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) load(); });
-load();
-setInterval(()=>{ if(!document.hidden) load(); }, 30000);
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden){ load(); if(alarm) keepAwake(true); } });
+setInterval(tick, 1000);
+if(alarm) keepAwake(true);
+load(); schedule();
 </script>
 </body>
 </html>
